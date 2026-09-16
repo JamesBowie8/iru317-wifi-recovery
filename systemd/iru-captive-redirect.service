@@ -1,0 +1,13 @@
+[Unit]
+Description=IRU317 Captive Portal HTTP Redirect
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c '/usr/sbin/iptables -t nat -C PREROUTING -i wlp1s0 -s 10.42.0.0/24 -p tcp --dport 80 -j REDIRECT --to-ports 80 2>/dev/null || /usr/sbin/iptables -t nat -A PREROUTING -i wlp1s0 -s 10.42.0.0/24 -p tcp --dport 80 -j REDIRECT --to-ports 80'
+ExecStop=/bin/sh -c '/usr/sbin/iptables -t nat -D PREROUTING -i wlp1s0 -s 10.42.0.0/24 -p tcp --dport 80 -j REDIRECT --to-ports 80 2>/dev/null || true'
+
+[Install]
+WantedBy=multi-user.target
