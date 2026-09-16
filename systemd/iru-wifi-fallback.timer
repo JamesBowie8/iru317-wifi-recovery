@@ -1,0 +1,11 @@
+[Unit]
+Description=Check IRU317 network connectivity
+
+[Timer]
+OnBootSec=45s
+OnUnitActiveSec=30s
+AccuracySec=5s
+Unit=iru-wifi-fallback.service
+
+[Install]
+WantedBy=timers.target
