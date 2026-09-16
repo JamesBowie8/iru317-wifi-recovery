@@ -1,0 +1,28 @@
+# NetworkManager connection profiles may contain Wi-Fi passwords
+*.nmconnection
+
+# Secrets / local environment
+.env
+.env.*
+*.secret
+*.secrets
+secrets/
+
+# Runtime/cache
+*.tmp
+*.log
+__pycache__/
+*.pyc
+iru-wifi-networks.json
+
+# Local backups
+*.bak
+*.backup
+*.before-*
+backup/
+backups/
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
