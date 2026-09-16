@@ -1,0 +1,8 @@
+[Unit]
+Description=IRU317 Wi-Fi Fallback Manager
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/iru-wifi-fallback.sh
