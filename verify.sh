@@ -108,7 +108,8 @@ fi
 
 echo
 echo '=== REPOSITORY SECRET SANITY CHECK ==='
-if grep -RInE --exclude-dir=.git --exclude='verify.sh' '(wifi-sec\.psk[[:space:]]+[^$]|psk=[^A-Z]|BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|api[_-]?key[[:space:]]*=|token[[:space:]]*=)' "$ROOT_DIR" >/tmp/iru-repo-secret-check.$$ 2>/dev/null; then
+# Heuristic only. Avoid matching intentional placeholders such as $SETUP_PASSWORD.
+if grep -RInE --exclude-dir=.git --exclude='verify.sh' '(BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|github_pat_[A-Za-z0-9_]{20,}|ghp_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9_-]{20,}|psk=[^$[:space:]][^[:space:]]{7,})' "$ROOT_DIR" >/tmp/iru-repo-secret-check.$$ 2>/dev/null; then
     warn 'possible secret-like strings found; review manually:'
     cat /tmp/iru-repo-secret-check.$$
 else
