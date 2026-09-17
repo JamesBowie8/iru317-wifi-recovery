@@ -11,68 +11,104 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs
 
+
 IFACE = "wlp1s0"
 SETUP = "iru-setup"
 CACHE = "/run/iru-wifi-networks.json"
 
 LOCK = threading.Lock()
+
 STATE = {
     "busy": False,
-    "message": "Выберите Wi-Fi сеть.",
+    "message": "Выберите Wi-Fi сеть."
 }
 
 
 def nmcli(*args, timeout=30):
     env = os.environ.copy()
     env["LC_ALL"] = "C"
+
     return subprocess.run(
         ["/usr/bin/nmcli", *args],
         capture_output=True,
         text=True,
         timeout=timeout,
-        env=env,
+        env=env
     )
 
 
 def allowed_client(ip):
-    return ip.startswith("10.42.0.") or ip in ("127.0.0.1", "::1")
+    return (
+        ip.startswith("10.42.0.")
+        or ip in ("127.0.0.1", "::1")
+    )
 
 
 def load_networks():
     try:
         with open(CACHE, "r", encoding="utf-8") as f:
             data = json.load(f)
+
         result = []
+
         for item in data:
             ssid = str(item.get("ssid", "")).strip()
+
             if not ssid or ssid == "--":
                 continue
+
             result.append({
                 "ssid": ssid,
                 "signal": int(item.get("signal", 0)),
-                "security": str(item.get("security", "Open")),
+                "security": str(
+                    item.get("security", "Open")
+                )
             })
+
         return result
+
     except Exception:
         return []
 
 
 def saved_wifi_profiles():
     result = {}
-    r = nmcli("-t", "-f", "NAME,TYPE", "connection", "show")
+
+    r = nmcli(
+        "-t",
+        "-f", "NAME,TYPE",
+        "connection", "show"
+    )
+
     if r.returncode != 0:
         return result
 
     for raw in r.stdout.splitlines():
         if ":" not in raw:
             continue
+
         name, typ = raw.rsplit(":", 1)
-        if typ not in ("wifi", "802-11-wireless") or name == SETUP:
+
+        if typ not in (
+            "wifi",
+            "802-11-wireless"
+        ):
             continue
-        s = nmcli("-g", "802-11-wireless.ssid", "connection", "show", name)
+
+        if name == SETUP:
+            continue
+
+        s = nmcli(
+            "-g", "802-11-wireless.ssid",
+            "connection", "show",
+            name
+        )
+
         ssid = s.stdout.strip()
+
         if ssid:
             result.setdefault(ssid, name)
+
     return result
 
 
@@ -87,9 +123,13 @@ def signal_bars(signal):
         level = 1
 
     bars = []
+
     for i in range(1, 5):
         cls = "on" if i <= level else ""
-        bars.append(f'<span class="{cls} b{i}"></span>')
+        bars.append(
+            f'<span class="{cls} b{i}"></span>'
+        )
+
     return "".join(bars)
 
 
@@ -102,185 +142,854 @@ def render_page():
         busy = STATE["busy"]
 
     disabled = "disabled" if busy else ""
+
     rows = []
 
-    for net in networks:
+    for i, net in enumerate(networks):
         ssid = net["ssid"]
         signal = net["signal"]
         security = net["security"]
-        badge = '<span class="known">✓ сохранена</span>' if ssid in saved else ""
+
+        known = ssid in saved
+
+        badge = (
+            '<span class="known">✓ сохранена</span>'
+            if known else ""
+        )
 
         rows.append(f'''
 <label class="network">
-  <input type="radio" name="ssid" value="{html.escape(ssid, quote=True)}" {disabled}>
-  <div class="network-main">
-    <div class="ssid-row"><span class="ssid">{html.escape(ssid)}</span>{badge}</div>
-    <div class="meta">
-      <span>{html.escape(security)}</span>
-      <span class="signal"><span class="bars">{signal_bars(signal)}</span>{signal}%</span>
+    <input
+        type="radio"
+        name="ssid"
+        value="{html.escape(ssid, quote=True)}"
+        {disabled}
+    >
+
+    <div class="network-main">
+        <div class="ssid-row">
+            <span class="ssid">
+                {html.escape(ssid)}
+            </span>
+
+            {badge}
+        </div>
+
+        <div class="meta">
+            <span>
+                {html.escape(security)}
+            </span>
+
+            <span class="signal">
+                <span class="bars">
+                    {signal_bars(signal)}
+                </span>
+
+                {signal}%
+            </span>
+        </div>
     </div>
-  </div>
 </label>
 ''')
 
     if not rows:
-        rows.append('<div class="empty">Список сетей пуст. Можно ввести SSID вручную.</div>')
+        rows.append('''
+<div class="empty">
+    Список сетей пуст.
+    Можно ввести имя Wi-Fi вручную ниже.
+</div>
+''')
 
     return f'''<!doctype html>
 <html lang="ru">
+
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+>
+
 <title>IRU317 Wi-Fi</title>
+
 <style>
-*{{box-sizing:border-box}}body{{margin:0;min-height:100vh;background:linear-gradient(180deg,#f2f5f8,#e9eef3);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:#18202a}}.wrap{{width:min(620px,calc(100% - 28px));margin:30px auto}}.card{{background:#fff;border-radius:26px;padding:26px;box-shadow:0 20px 60px rgba(20,40,60,.10)}}.logo{{width:54px;height:54px;border-radius:17px;display:grid;place-items:center;font-weight:800;background:#18202a;color:#fff;margin-bottom:18px}}h1{{margin:0;font-size:27px}}.subtitle{{margin-top:7px;color:#66717f;line-height:1.45}}.status{{margin:20px 0;padding:14px 16px;border-radius:15px;background:#f4f7f9;color:#46515d;font-size:14px}}.section-title{{margin:22px 0 10px;font-size:13px;font-weight:700;color:#7b8590;text-transform:uppercase;letter-spacing:.06em}}.network{{display:flex;align-items:center;gap:13px;padding:14px 13px;margin-bottom:8px;border:1px solid #e6eaf0;border-radius:16px;cursor:pointer}}.network:has(input:checked){{border-color:#536170;background:#f5f7f9}}.network input{{width:20px;height:20px}}.network-main{{min-width:0;flex:1}}.ssid-row{{display:flex;align-items:center;gap:8px}}.ssid{{font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.known{{font-size:11px;padding:4px 7px;border-radius:20px;background:#e8f5eb;color:#26763b;font-weight:700}}.meta{{margin-top:6px;display:flex;justify-content:space-between;color:#87919b;font-size:12px}}.signal{{display:flex;align-items:center;gap:6px}}.bars{{height:15px;display:flex;align-items:end;gap:2px}}.bars span{{display:block;width:3px;border-radius:2px;background:#d7dce1}}.bars .b1{{height:4px}}.bars .b2{{height:7px}}.bars .b3{{height:10px}}.bars .b4{{height:14px}}.bars span.on{{background:#344252}}input[type=text],input[type=password]{{width:100%;border:1px solid #dfe4e9;border-radius:14px;padding:14px 15px;font-size:16px}}.password-wrap{{position:relative}}.password-wrap input{{padding-right:72px}}.show-password{{position:absolute;right:9px;top:50%;transform:translateY(-50%);border:0;background:transparent;font-weight:650;color:#596776;cursor:pointer}}.connect{{width:100%;margin-top:18px;padding:15px;border:0;border-radius:15px;background:#18202a;color:#fff;font-weight:750;font-size:16px;cursor:pointer}}.connect:disabled{{opacity:.45}}.note{{margin-top:15px;color:#88929d;font-size:12px;line-height:1.5;text-align:center}}.empty{{padding:18px;border-radius:15px;background:#f5f7f9;color:#697580;font-size:14px}}.footer{{margin-top:16px;text-align:center;color:#9aa3ac;font-size:11px}}@media(max-width:520px){{.wrap{{margin:14px auto}}.card{{padding:20px;border-radius:22px}}}}
+* {{
+    box-sizing: border-box;
+}}
+
+body {{
+    margin: 0;
+    min-height: 100vh;
+    background:
+        linear-gradient(
+            180deg,
+            #f2f5f8 0%,
+            #e9eef3 100%
+        );
+    font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        Roboto,
+        Arial,
+        sans-serif;
+    color: #18202a;
+}}
+
+.wrap {{
+    width: min(620px, calc(100% - 28px));
+    margin: 30px auto;
+}}
+
+.card {{
+    background: white;
+    border-radius: 26px;
+    padding: 26px;
+    box-shadow:
+        0 20px 60px rgba(20, 40, 60, .10);
+}}
+
+.logo {{
+    width: 54px;
+    height: 54px;
+    border-radius: 17px;
+    display: grid;
+    place-items: center;
+    font-weight: 800;
+    font-size: 17px;
+    background: #18202a;
+    color: white;
+    margin-bottom: 18px;
+}}
+
+h1 {{
+    margin: 0;
+    font-size: 27px;
+    letter-spacing: -.5px;
+}}
+
+.subtitle {{
+    margin-top: 7px;
+    color: #66717f;
+    line-height: 1.45;
+}}
+
+.status {{
+    margin: 20px 0;
+    padding: 14px 16px;
+    border-radius: 15px;
+    background: #f4f7f9;
+    color: #46515d;
+    font-size: 14px;
+}}
+
+.section-title {{
+    margin: 22px 0 10px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #7b8590;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+}}
+
+.network {{
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    padding: 14px 13px;
+    margin-bottom: 8px;
+    border: 1px solid #e6eaf0;
+    border-radius: 16px;
+    cursor: pointer;
+    transition: .15s;
+}}
+
+.network:hover {{
+    background: #f8fafc;
+}}
+
+.network:has(input:checked) {{
+    border-color: #536170;
+    background: #f5f7f9;
+}}
+
+.network input {{
+    width: 20px;
+    height: 20px;
+    flex: 0 0 auto;
+}}
+
+.network-main {{
+    min-width: 0;
+    flex: 1;
+}}
+
+.ssid-row {{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}}
+
+.ssid {{
+    font-weight: 650;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}}
+
+.known {{
+    flex: 0 0 auto;
+    font-size: 11px;
+    padding: 4px 7px;
+    border-radius: 20px;
+    background: #e8f5eb;
+    color: #26763b;
+    font-weight: 700;
+}}
+
+.meta {{
+    margin-top: 6px;
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    color: #87919b;
+    font-size: 12px;
+}}
+
+.signal {{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}}
+
+.bars {{
+    height: 15px;
+    display: flex;
+    align-items: end;
+    gap: 2px;
+}}
+
+.bars span {{
+    display: block;
+    width: 3px;
+    border-radius: 2px;
+    background: #d7dce1;
+}}
+
+.bars .b1 {{ height: 4px; }}
+.bars .b2 {{ height: 7px; }}
+.bars .b3 {{ height: 10px; }}
+.bars .b4 {{ height: 14px; }}
+
+.bars span.on {{
+    background: #344252;
+}}
+
+input[type=text],
+input[type=password] {{
+    width: 100%;
+    border: 1px solid #dfe4e9;
+    border-radius: 14px;
+    padding: 14px 15px;
+    font-size: 16px;
+    outline: none;
+    background: white;
+}}
+
+input[type=text]:focus,
+input[type=password]:focus {{
+    border-color: #8491a0;
+}}
+
+.password-wrap {{
+    position: relative;
+}}
+
+.password-wrap input {{
+    padding-right: 64px;
+}}
+
+.show-password {{
+    position: absolute;
+    right: 9px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: 0;
+    background: transparent;
+    font-size: 13px;
+    font-weight: 650;
+    color: #596776;
+    cursor: pointer;
+}}
+
+.manual {{
+    margin-top: 9px;
+}}
+
+.connect {{
+    width: 100%;
+    margin-top: 18px;
+    padding: 15px;
+    border: 0;
+    border-radius: 15px;
+    background: #18202a;
+    color: white;
+    font-weight: 750;
+    font-size: 16px;
+    cursor: pointer;
+}}
+
+.connect:disabled {{
+    opacity: .45;
+}}
+
+.note {{
+    margin-top: 15px;
+    color: #88929d;
+    font-size: 12px;
+    line-height: 1.5;
+    text-align: center;
+}}
+
+.empty {{
+    padding: 18px;
+    border-radius: 15px;
+    background: #f5f7f9;
+    color: #697580;
+    font-size: 14px;
+}}
+
+.footer {{
+    margin-top: 16px;
+    text-align: center;
+    color: #9aa3ac;
+    font-size: 11px;
+}}
+
+@media (max-width: 520px) {{
+    .wrap {{
+        margin: 14px auto;
+    }}
+
+    .card {{
+        padding: 20px;
+        border-radius: 22px;
+    }}
+
+    h1 {{
+        font-size: 24px;
+    }}
+}}
 </style>
 </head>
+
 <body>
-<div class="wrap"><div class="card">
+
+<div class="wrap">
+
+<div class="card">
+
 <div class="logo">IRU</div>
+
 <h1>Настройка Wi-Fi</h1>
-<div class="subtitle">Выберите сеть для IRU317. После успешного подключения она будет сохранена автоматически.</div>
-<div class="status">{html.escape(message)}</div>
-<form method="post" action="/connect">
-<div class="section-title">Доступные сети</div>
-{''.join(rows)}
-<div class="section-title">Другая сеть</div>
-<input type="text" name="manual_ssid" placeholder="Имя сети (SSID)" autocomplete="off" {disabled}>
-<div class="section-title">Пароль</div>
-<div class="password-wrap">
-<input id="wifi-password" type="password" name="password" placeholder="Пароль Wi-Fi" autocomplete="current-password" {disabled}>
-<button type="button" class="show-password" onclick="togglePassword()">Показать</button>
+
+<div class="subtitle">
+    Выберите сеть для IRU317.
+    После успешного подключения
+    она будет сохранена автоматически.
 </div>
-<button class="connect" type="submit" {disabled}>Подключиться</button>
+
+<div class="status">
+    {html.escape(message)}
+</div>
+
+<form method="post" action="/connect">
+
+<div class="section-title">
+    Доступные сети
+</div>
+
+{''.join(rows)}
+
+<div class="section-title">
+    Другая сеть
+</div>
+
+<div class="manual">
+<input
+    type="text"
+    name="manual_ssid"
+    placeholder="Имя сети (SSID)"
+    autocomplete="off"
+    {disabled}
+>
+</div>
+
+<div class="section-title">
+    Пароль
+</div>
+
+<div class="password-wrap">
+
+<input
+    id="wifi-password"
+    type="password"
+    name="password"
+    placeholder="Пароль Wi-Fi"
+    autocomplete="current-password"
+    {disabled}
+>
+
+<button
+    type="button"
+    class="show-password"
+    onclick="togglePassword()"
+>
+Показать
+</button>
+
+</div>
+
+<button
+    class="connect"
+    type="submit"
+    {disabled}
+>
+Подключиться
+</button>
+
 </form>
-<div class="note">Для сети с отметкой «✓ сохранена» пароль можно оставить пустым.<br>Если подключение не удастся, IRU317-SETUP появится снова.</div>
-</div><div class="footer">IRU317 · Wi-Fi Recovery Portal</div></div>
+
+<div class="note">
+    Для сети с отметкой «✓ сохранена»
+    пароль можно оставить пустым.
+    <br>
+    Если подключение не удастся,
+    IRU317-SETUP появится снова.
+</div>
+
+</div>
+
+<div class="footer">
+IRU317 · Wi-Fi Recovery Portal
+</div>
+
+</div>
+
 <script>
-function togglePassword(){{const i=document.getElementById('wifi-password');const b=document.querySelector('.show-password');if(i.type==='password'){{i.type='text';b.textContent='Скрыть'}}else{{i.type='password';b.textContent='Показать'}}}}
+function togglePassword() {{
+    const input =
+        document.getElementById("wifi-password");
+
+    const button =
+        document.querySelector(".show-password");
+
+    if (input.type === "password") {{
+        input.type = "text";
+        button.textContent = "Скрыть";
+    }} else {{
+        input.type = "password";
+        button.textContent = "Показать";
+    }}
+}}
 </script>
-</body></html>'''
+
+</body>
+</html>
+'''
 
 
 def normal_connection_ready():
     for _ in range(40):
-        c = nmcli("-g", "GENERAL.CONNECTION", "device", "show", IFACE).stdout.strip()
-        ip = nmcli("-g", "IP4.ADDRESS", "device", "show", IFACE).stdout.strip()
-        if c and c != "--" and c != SETUP and ip:
+        c = nmcli(
+            "-g", "GENERAL.CONNECTION",
+            "device", "show", IFACE
+        ).stdout.strip()
+
+        ip = nmcli(
+            "-g", "IP4.ADDRESS",
+            "device", "show", IFACE
+        ).stdout.strip()
+
+        if (
+            c
+            and c != "--"
+            and c != SETUP
+            and ip
+        ):
             return True
+
         time.sleep(1)
+
     return False
 
 
 def connect_worker(ssid, password, hidden):
     generated = False
+
     try:
         with LOCK:
-            STATE["message"] = f"Подключаемся к {ssid}..."
+            STATE["message"] = (
+                f"Подключаемся к {ssid}..."
+            )
 
         saved = saved_wifi_profiles()
 
+        # Уже известная сеть + пароль не введён:
+        # используем существующий профиль.
         if ssid in saved and not password:
             profile = saved[ssid]
-            nmcli("connection", "down", SETUP, timeout=15)
+
+            nmcli(
+                "connection", "down",
+                SETUP,
+                timeout=15
+            )
+
             time.sleep(2)
-            r = nmcli("connection", "up", profile, "ifname", IFACE, timeout=45)
+
+            r = nmcli(
+                "connection", "up",
+                profile,
+                "ifname", IFACE,
+                timeout=45
+            )
+
         else:
-            profile = "iru-wifi-" + hashlib.sha256(ssid.encode("utf-8")).hexdigest()[:10]
+            profile = (
+                "iru-wifi-"
+                + hashlib.sha256(
+                    ssid.encode("utf-8")
+                ).hexdigest()[:10]
+            )
+
             generated = True
-            nmcli("connection", "delete", profile, timeout=10)
-            nmcli("connection", "down", SETUP, timeout=15)
+
+            nmcli(
+                "connection", "delete",
+                profile,
+                timeout=10
+            )
+
+            nmcli(
+                "connection", "down",
+                SETUP,
+                timeout=15
+            )
+
             time.sleep(2)
 
-            args = ["device", "wifi", "connect", ssid, "ifname", IFACE, "name", profile]
-            if password:
-                args += ["password", password]
-            if hidden:
-                args += ["hidden", "yes"]
+            args = [
+                "device", "wifi", "connect",
+                ssid,
+                "ifname", IFACE,
+                "name", profile
+            ]
 
-            r = nmcli(*args, timeout=50)
+            if password:
+                args += [
+                    "password",
+                    password
+                ]
+
+            if hidden:
+                args += [
+                    "hidden",
+                    "yes"
+                ]
+
+            r = nmcli(
+                *args,
+                timeout=50
+            )
+
             if r.returncode == 0:
                 nmcli(
-                    "connection", "modify", profile,
-                    "connection.autoconnect", "yes",
-                    "connection.autoconnect-priority", "80",
+                    "connection", "modify",
+                    profile,
+                    "connection.autoconnect",
+                    "yes",
+                    "connection.autoconnect-priority",
+                    "80"
                 )
 
-        if r.returncode == 0 and normal_connection_ready():
+        if (
+            r.returncode == 0
+            and normal_connection_ready()
+        ):
             with LOCK:
-                STATE["message"] = f"Подключено к {ssid}."
+                STATE["message"] = (
+                    f"Подключено к {ssid}."
+                )
                 STATE["busy"] = False
+
             return
 
         if generated:
-            nmcli("connection", "delete", profile, timeout=10)
+            nmcli(
+                "connection", "delete",
+                profile,
+                timeout=10
+            )
 
-        nmcli("connection", "up", SETUP, timeout=30)
+        nmcli(
+            "connection", "up",
+            SETUP,
+            timeout=30
+        )
+
         with LOCK:
-            STATE["message"] = "Не удалось подключиться. Проверьте пароль и попробуйте ещё раз."
+            STATE["message"] = (
+                "Не удалось подключиться. "
+                "Проверьте пароль и попробуйте ещё раз."
+            )
             STATE["busy"] = False
 
     except Exception:
-        nmcli("connection", "up", SETUP, timeout=30)
+        nmcli(
+            "connection", "up",
+            SETUP,
+            timeout=30
+        )
+
         with LOCK:
-            STATE["message"] = "Ошибка подключения. Режим настройки восстановлен."
+            STATE["message"] = (
+                "Ошибка подключения. "
+                "Режим настройки восстановлен."
+            )
             STATE["busy"] = False
 
 
 class Handler(BaseHTTPRequestHandler):
+
     def log_message(self, fmt, *args):
-        print(f'{self.client_address[0]} - {fmt % args}', flush=True)
+        print(
+            "%s - %s"
+            % (
+                self.client_address[0],
+                fmt % args
+            ),
+            flush=True
+        )
 
     def send_html(self, body, code=200):
         data = body.encode("utf-8")
+
         self.send_response(code)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Length", str(len(data)))
+        self.send_header(
+            "Content-Type",
+            "text/html; charset=utf-8"
+        )
+        self.send_header(
+            "Cache-Control",
+            "no-store"
+        )
+        self.send_header(
+            "Content-Length",
+            str(len(data))
+        )
         self.end_headers()
+
         self.wfile.write(data)
 
     def do_GET(self):
-        if not allowed_client(self.client_address[0]):
-            self.send_html("<h1>403</h1>", 403)
+        ip = self.client_address[0]
+
+        if not allowed_client(ip):
+            self.send_html(
+                "<h1>403</h1>",
+                403
+            )
             return
-        self.send_html(render_page())
+
+        # ВАЖНО:
+        # любой HTTP captive-portal probe
+        # получает нашу страницу вместо ожидаемого
+        # 204 / Success / Microsoft Connect Test.
+        self.send_html(
+            render_page()
+        )
 
     def do_POST(self):
-        if not allowed_client(self.client_address[0]):
-            self.send_html("<h1>403</h1>", 403)
+        ip = self.client_address[0]
+
+        if not allowed_client(ip):
+            self.send_html(
+                "<h1>403</h1>",
+                403
+            )
             return
 
         if self.path != "/connect":
-            self.send_html("<h1>404</h1>", 404)
+            self.send_html(
+                "<h1>404</h1>",
+                404
+            )
             return
 
-        length = int(self.headers.get("Content-Length", "0"))
-        data = parse_qs(self.rfile.read(length).decode("utf-8", errors="replace"))
-        selected = data.get("ssid", [""])[0].strip()
-        manual = data.get("manual_ssid", [""])[0].strip()
-        password = data.get("password", [""])[0]
-        ssid = manual or selected
-        hidden = bool(manual)
+        try:
+            length = int(
+                self.headers.get(
+                    "Content-Length",
+                    "0"
+                )
+            )
 
-        if not ssid:
-            with LOCK:
-                STATE["message"] = "Сначала выберите сеть."
-            self.send_html(render_page())
-            return
+            raw = self.rfile.read(length)
 
-        with LOCK:
-            if STATE["busy"]:
-                self.send_html(render_page())
+            data = parse_qs(
+                raw.decode(
+                    "utf-8",
+                    errors="replace"
+                )
+            )
+
+            selected = (
+                data.get("ssid", [""])[0]
+                .strip()
+            )
+
+            manual = (
+                data.get(
+                    "manual_ssid",
+                    [""]
+                )[0]
+                .strip()
+            )
+
+            password = data.get(
+                "password",
+                [""]
+            )[0]
+
+            ssid = manual or selected
+            hidden = bool(manual)
+
+            if not ssid:
+                with LOCK:
+                    STATE["message"] = (
+                        "Сначала выберите сеть."
+                    )
+
+                self.send_html(
+                    render_page()
+                )
                 return
-            STATE["busy"] = True
-            STATE["message"] = f"Готовимся подключиться к {ssid}..."
 
-        threading.Timer(1.0, connect_worker, args=(ssid, password, hidden)).start()
-        self.send_html('''<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>IRU317</title></head><body style="font-family:sans-serif;background:#f0f3f6;display:grid;place-items:center;min-height:100vh"><div style="background:white;padding:30px;border-radius:24px;text-align:center"><h2>Подключаем IRU317</h2><p>Точка IRU317-SETUP сейчас исчезнет.<br>После подключения сервера вернитесь в обычную Wi-Fi сеть.</p></div></body></html>''')
+            with LOCK:
+                if STATE["busy"]:
+                    self.send_html(
+                        render_page()
+                    )
+                    return
+
+                STATE["busy"] = True
+                STATE["message"] = (
+                    f"Готовимся подключиться "
+                    f"к {ssid}..."
+                )
+
+            # Сначала полностью отдаём страницу
+            # телефону, и только потом выключаем AP.
+            threading.Timer(
+                1.0,
+                connect_worker,
+                args=(
+                    ssid,
+                    password,
+                    hidden
+                )
+            ).start()
+
+            self.send_html('''
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta
+ name="viewport"
+ content="width=device-width,initial-scale=1"
+>
+<title>IRU317</title>
+<style>
+body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+    background: #f0f3f6;
+    color: #18202a;
+}
+.card {
+    width: min(420px, calc(100% - 32px));
+    background: white;
+    padding: 30px;
+    border-radius: 24px;
+    text-align: center;
+    box-shadow:
+        0 20px 60px rgba(20,40,60,.10);
+}
+.loader {
+    width: 34px;
+    height: 34px;
+    margin: 0 auto 18px;
+    border: 4px solid #e3e7eb;
+    border-top-color: #18202a;
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+}
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+p {
+    color: #66717f;
+    line-height: 1.5;
+}
+</style>
+</head>
+
+<body>
+<div class="card">
+<div class="loader"></div>
+<h2>Подключаем IRU317</h2>
+<p>
+Точка IRU317-SETUP сейчас исчезнет.
+После подключения сервера вернитесь
+в обычную Wi-Fi сеть.
+</p>
+</div>
+</body>
+</html>
+''')
+
+        except Exception:
+            with LOCK:
+                STATE["busy"] = False
+                STATE["message"] = (
+                    "Ошибка обработки запроса."
+                )
+
+            self.send_html(
+                render_page()
+            )
 
 
 if __name__ == "__main__":
-    server = ThreadingHTTPServer(("0.0.0.0", 80), Handler)
-    print("IRU317 Wi-Fi portal listening on port 80", flush=True)
+    server = ThreadingHTTPServer(
+        ("0.0.0.0", 80),
+        Handler
+    )
+
+    print(
+        "IRU317 Wi-Fi portal "
+        "listening on port 80",
+        flush=True
+    )
+
     server.serve_forever()

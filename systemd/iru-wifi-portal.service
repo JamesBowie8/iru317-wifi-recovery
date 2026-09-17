@@ -7,7 +7,7 @@ Requires=NetworkManager.service
 Type=simple
 ExecStart=/usr/bin/python3 /usr/local/sbin/iru-wifi-portal.py
 Restart=always
-RestartSec=2
+RestartSec=3
 User=root
 
 [Install]

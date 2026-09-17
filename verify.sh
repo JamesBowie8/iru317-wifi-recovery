@@ -63,7 +63,7 @@ done
 echo
 echo '=== SETUP PROFILE (NO SECRET OUTPUT) ==='
 PROFILE=iru-setup
-if nmcli -g NAME connection show "$PROFILE" >/dev/null 2>&1; then
+if nmcli connection show "$PROFILE" >/dev/null 2>&1; then
     ok "$PROFILE exists"
 
     mode="$(nmcli -g 802-11-wireless.mode connection show "$PROFILE" 2>/dev/null || true)"

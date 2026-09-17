@@ -12,12 +12,13 @@ CACHE = "/run/iru-wifi-networks.json"
 def nmcli(*args, timeout=30):
     env = os.environ.copy()
     env["LC_ALL"] = "C"
+
     return subprocess.run(
         ["/usr/bin/nmcli", *args],
         capture_output=True,
         text=True,
         timeout=timeout,
-        env=env,
+        env=env
     )
 
 
@@ -27,6 +28,7 @@ def parse(text):
 
     def commit():
         ssid = block.get("SSID", "").strip()
+
         if not ssid or ssid == "--":
             return
 
@@ -36,13 +38,14 @@ def parse(text):
             signal = 0
 
         security = block.get("SECURITY", "").strip()
+
         if not security or security == "--":
             security = "Open"
 
         networks.append({
             "ssid": ssid,
             "signal": signal,
-            "security": security,
+            "security": security
         })
 
     for raw in text.splitlines():
@@ -62,15 +65,20 @@ def parse(text):
     commit()
 
     unique = {}
+
     for item in networks:
         ssid = item["ssid"]
-        if ssid not in unique or item["signal"] > unique[ssid]["signal"]:
+
+        if (
+            ssid not in unique
+            or item["signal"] > unique[ssid]["signal"]
+        ):
             unique[ssid] = item
 
     return sorted(
         unique.values(),
         key=lambda x: x["signal"],
-        reverse=True,
+        reverse=True
     )
 
 
@@ -82,7 +90,7 @@ for attempt in range(1, 4):
     nmcli(
         "device", "wifi", "rescan",
         "ifname", IFACE,
-        timeout=20,
+        timeout=20
     )
 
     time.sleep(4)
@@ -93,7 +101,7 @@ for attempt in range(1, 4):
         "device", "wifi", "list",
         "ifname", IFACE,
         "--rescan", "no",
-        timeout=30,
+        timeout=30
     )
 
     if r.returncode == 0:
@@ -108,7 +116,12 @@ for attempt in range(1, 4):
 tmp = CACHE + ".tmp"
 
 with open(tmp, "w", encoding="utf-8") as f:
-    json.dump(networks, f, ensure_ascii=False, indent=2)
+    json.dump(
+        networks,
+        f,
+        ensure_ascii=False,
+        indent=2
+    )
 
 os.chmod(tmp, 0o644)
 os.replace(tmp, CACHE)
