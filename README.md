@@ -35,6 +35,7 @@
 - `systemd/iru-captive-redirect.service` - перехват HTTP captive-probe на порт 80.
 - `networkmanager/90-iru-captive.conf` - DNS-перенаправление внутри setup-сети.
 - `install.sh` - установка файлов и создание безопасного AP-профиля.
+- `verify.sh` - неразрушающая проверка, что установленная система совпадает с GitHub-эталоном.
 
 ## Требования
 
@@ -72,7 +73,28 @@ Portal:           http://10.42.0.1/
 
 Их можно переопределить переменными окружения.
 
-## Проверка
+## Проверка установленной системы по GitHub-эталону
+
+После клонирования репозитория на работающий сервер:
+
+```bash
+cd iru317-wifi-recovery
+git pull
+chmod +x verify.sh
+sudo ./verify.sh
+```
+
+Скрипт ничего не меняет. Он сравнивает рабочие скрипты, systemd units и dnsmasq-конфиг с файлами из репозитория, проверяет синтаксис, состояние сервисов, параметры `iru-setup`, captive HTTP redirect и наличие зависшего setup-dnsmasq. PSK профиля он не выводит.
+
+Итог без расхождений:
+
+```text
+PASS - installed system matches the repository checks.
+```
+
+Если рабочий сервер намеренно отличается от репозитория, сначала изучите показанный `diff`; не копируйте изменения в GitHub вслепую.
+
+## Ручная диагностика
 
 ```bash
 systemctl status iru-wifi-portal --no-pager
@@ -90,6 +112,7 @@ python3 -m json.tool /run/iru-wifi-networks.json
 - Портал принимает клиентов только из `10.42.0.0/24` и localhost.
 - Новые Wi-Fi профили создаются NetworkManager локально на сервере.
 - `.gitignore` исключает `.nmconnection`, секреты, runtime-кэш и локальные бэкапы.
+- `verify.sh` проверяет проект без чтения или печати сохранённого Wi-Fi PSK.
 
 Если используется UFW, разрешите setup-подсети HTTP, DNS и при необходимости аварийный SSH.
 
